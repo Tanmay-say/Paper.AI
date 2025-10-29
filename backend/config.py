@@ -1,13 +1,11 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
-import os
 from pathlib import Path
-from dotenv import load_dotenv
 
-# Load environment variables from backend/.env
+# Determine env file: prefer .env, fallback to env.txt (to match your provided file)
 BACKEND_DIR = Path(__file__).parent
-ENV_FILE = BACKEND_DIR / '.env'
-load_dotenv(ENV_FILE)
+_env_candidates = [BACKEND_DIR / '.env', BACKEND_DIR / 'env.txt']
+ENV_FILE = next((p for p in _env_candidates if p.exists()), _env_candidates[0])
 
 
 class Settings(BaseSettings):
@@ -20,9 +18,10 @@ class Settings(BaseSettings):
     DB_NAME: str
     
     # Neo4j Configuration
-    NEO4J_URI: str = "bolt://localhost:7687"
-    NEO4J_USER: str = "neo4j"
-    NEO4J_PASSWORD: str = "paperai123"
+    NEO4J_URI: str
+    NEO4J_USER: str
+    NEO4J_PASSWORD: str
+    NEO4J_DATABASE: str = "neo4j"
     
     # Redis Configuration
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -46,9 +45,13 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: str = "*"
     
-    class Config:
-        env_file = str(ENV_FILE)
-        case_sensitive = True
+    # Pydantic v2 configuration
+    model_config = SettingsConfigDict(
+        env_file=ENV_FILE,
+        env_file_encoding='utf-8',
+        case_sensitive=True,
+        extra='ignore'
+    )
 
 
 settings = Settings()

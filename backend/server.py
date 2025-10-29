@@ -104,14 +104,23 @@ async def get_paper(paper_id: str):
 async def get_paper_pdf(paper_id: str):
     """Stream the PDF file for a paper"""
     try:
+        # First check Neo4j connectivity
+        is_connected = await neo4j_service.verify_connectivity()
+        if not is_connected:
+            logger.error("Neo4j connection failed")
+            raise HTTPException(status_code=500, detail="Database connection error")
+        
         paper = await neo4j_service.get_paper(paper_id)
         if not paper or not paper.get('pdf_path'):
+            logger.warning(f"PDF not found in database for paper {paper_id}")
             raise HTTPException(status_code=404, detail="PDF not found")
         
         pdf_path = Path(paper['pdf_path'])
         if not pdf_path.exists():
+            logger.warning(f"PDF file not found on disk: {pdf_path}")
             raise HTTPException(status_code=404, detail="PDF file not found on disk")
         
+        logger.info(f"Serving PDF for paper {paper_id} from {pdf_path}")
         return FileResponse(
             path=str(pdf_path),
             media_type='application/pdf',
@@ -120,8 +129,8 @@ async def get_paper_pdf(paper_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error retrieving PDF: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error retrieving PDF for paper {paper_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving PDF: {str(e)}")
 
 
 # Chat Endpoints

@@ -10,7 +10,7 @@ env/*
 .env*
 .env.local
 
-
+venv/*
 
 # Dependencies
 node_modules/
