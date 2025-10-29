@@ -102,25 +102,54 @@ async def get_paper(paper_id: str):
 
 @api_router.get("/papers/{paper_id}/pdf")
 async def get_paper_pdf(paper_id: str):
-    """Stream the PDF file for a paper"""
+    """Stream the PDF file for a paper.
+
+    Behavior:
+    - If the paper exists in Neo4j with a valid `pdf_path`, serve it from disk.
+    - Otherwise, fetch metadata from arXiv and download the PDF on-the-fly to
+      `settings.PDF_STORAGE_PATH`, then serve it. Best-effort trigger of
+      background ingestion is attempted when available.
+    """
     try:
-        # First check Neo4j connectivity
-        is_connected = await neo4j_service.verify_connectivity()
-        if not is_connected:
-            logger.error("Neo4j connection failed")
-            raise HTTPException(status_code=500, detail="Database connection error")
-        
-        paper = await neo4j_service.get_paper(paper_id)
-        if not paper or not paper.get('pdf_path'):
-            logger.warning(f"PDF not found in database for paper {paper_id}")
-            raise HTTPException(status_code=404, detail="PDF not found")
-        
-        pdf_path = Path(paper['pdf_path'])
+        # Try Neo4j first (best source of truth if ingested)
+        try:
+            is_connected = await neo4j_service.verify_connectivity()
+        except Exception:
+            is_connected = False
+
+        if is_connected:
+            paper = await neo4j_service.get_paper(paper_id)
+            if paper and paper.get('pdf_path'):
+                pdf_path = Path(paper['pdf_path'])
+                if pdf_path.exists():
+                    logger.info(f"Serving PDF for paper {paper_id} from {pdf_path}")
+                    return FileResponse(
+                        path=str(pdf_path),
+                        media_type='application/pdf',
+                        filename=f"{paper_id}.pdf"
+                    )
+
+        # Fallback: fetch from arXiv and download immediately
+        logger.info(f"Falling back to arXiv download for {paper_id}")
+        metadata = await discovery_agent.get_paper_by_id(paper_id)
+
+        from workers.ingestion_tasks import download_paper_pdf  # local import to avoid cycles
+        storage_dir = Path(settings.PDF_STORAGE_PATH)
+        storage_dir.mkdir(parents=True, exist_ok=True)
+        pdf_path_str = download_paper_pdf(paper_id, metadata.arxiv_id)
+        pdf_path = Path(pdf_path_str)
+
+        # Best-effort: kick off background ingestion so future requests hit DB
+        try:
+            from workers.ingestion_tasks import ingest_single_paper
+            ingest_single_paper.delay(paper_id)
+        except Exception as bg_e:
+            logger.warning(f"Background ingestion not started (non-fatal): {bg_e}")
+
         if not pdf_path.exists():
-            logger.warning(f"PDF file not found on disk: {pdf_path}")
-            raise HTTPException(status_code=404, detail="PDF file not found on disk")
-        
-        logger.info(f"Serving PDF for paper {paper_id} from {pdf_path}")
+            raise HTTPException(status_code=404, detail="PDF file not found after download")
+
+        logger.info(f"Serving freshly downloaded PDF for {paper_id} from {pdf_path}")
         return FileResponse(
             path=str(pdf_path),
             media_type='application/pdf',
