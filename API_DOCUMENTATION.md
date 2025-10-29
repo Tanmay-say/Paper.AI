@@ -1,6 +1,6 @@
 # PaperAI API Documentation
 
-Base URL: `https://researchgenius.preview.emergentagent.com/api`
+Base URL: `https://sciquest-2.preview.emergentagent.com/api`
 
 ## Authentication
 No authentication required for this version.
@@ -16,7 +16,7 @@ Check the health status of the API and Neo4j connection.
 
 **Example:**
 ```bash
-curl -X GET "https://researchgenius.preview.emergentagent.com/api/health"
+curl -X GET "https://sciquest-2.preview.emergentagent.com/api/health"
 ```
 
 **Response:**
@@ -45,7 +45,7 @@ Search for research papers from arXiv.
 
 **Example:**
 ```bash
-curl -X POST "https://researchgenius.preview.emergentagent.com/api/papers/search" \
+curl -X POST "https://sciquest-2.preview.emergentagent.com/api/papers/search" \
   -H "Content-Type: application/json" \
   -d '{
     "query": "neural networks deep learning",
@@ -79,7 +79,7 @@ Get detailed information about a specific paper from Neo4j.
 
 **Example:**
 ```bash
-curl -X GET "https://researchgenius.preview.emergentagent.com/api/papers/2103.14030v2"
+curl -X GET "https://sciquest-2.preview.emergentagent.com/api/papers/2103.14030v2"
 ```
 
 **Response:**
@@ -106,7 +106,7 @@ Stream or download the PDF file for a paper.
 
 **Example:**
 ```bash
-curl -X GET "https://researchgenius.preview.emergentagent.com/api/papers/2103.14030v2/pdf" \
+curl -X GET "https://sciquest-2.preview.emergentagent.com/api/papers/2103.14030v2/pdf" \
   --output paper.pdf
 ```
 
@@ -131,7 +131,7 @@ Ask questions about a paper and get AI-generated answers.
 
 **Example:**
 ```bash
-curl -X POST "https://researchgenius.preview.emergentagent.com/api/chat/query" \
+curl -X POST "https://sciquest-2.preview.emergentagent.com/api/chat/query" \
   -H "Content-Type: application/json" \
   -d '{
     "paper_id": "2103.14030",
@@ -174,7 +174,7 @@ Trigger background ingestion of papers into the system.
 
 **Example:**
 ```bash
-curl -X POST "https://researchgenius.preview.emergentagent.com/api/ingest/papers" \
+curl -X POST "https://sciquest-2.preview.emergentagent.com/api/ingest/papers" \
   -H "Content-Type: application/json" \
   -d '{
     "paper_ids": ["2103.14030"],
@@ -205,7 +205,7 @@ Check the status of a paper ingestion job.
 
 **Example:**
 ```bash
-curl -X GET "https://researchgenius.preview.emergentagent.com/api/ingest/status/7325667b-8cd7-44e2-9602-c5ec0e88c29c"
+curl -X GET "https://sciquest-2.preview.emergentagent.com/api/ingest/status/7325667b-8cd7-44e2-9602-c5ec0e88c29c"
 ```
 
 **Response:**
@@ -277,14 +277,14 @@ The server will send multiple JSON messages:
 
 ### 1. Search for a Paper
 ```bash
-curl -X POST "https://researchgenius.preview.emergentagent.com/api/papers/search" \
+curl -X POST "https://sciquest-2.preview.emergentagent.com/api/papers/search" \
   -H "Content-Type: application/json" \
   -d '{"query": "attention is all you need", "max_results": 1}'
 ```
 
 ### 2. Ingest the Paper
 ```bash
-curl -X POST "https://researchgenius.preview.emergentagent.com/api/ingest/papers" \
+curl -X POST "https://sciquest-2.preview.emergentagent.com/api/ingest/papers" \
   -H "Content-Type: application/json" \
   -d '{"paper_ids": ["<paper_id_from_search>"], "source": "arxiv"}'
 ```
@@ -293,7 +293,7 @@ curl -X POST "https://researchgenius.preview.emergentagent.com/api/ingest/papers
 
 ### 4. Query the Paper
 ```bash
-curl -X POST "https://researchgenius.preview.emergentagent.com/api/chat/query" \
+curl -X POST "https://sciquest-2.preview.emergentagent.com/api/chat/query" \
   -H "Content-Type: application/json" \
   -d '{
     "paper_id": "<paper_id>",

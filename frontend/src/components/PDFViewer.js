@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Loader2, FileText } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Loader2, FileText, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import usePaperStore from '@/store/paperStore';
+import { ingestionAPI } from '@/services/api';
+import { toast } from 'sonner';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
@@ -14,11 +16,52 @@ const PDFViewer = ({ pdfUrl }) => {
   const [pageNumber, setPageNumber] = useState(1);
   const [scale, setScale] = useState(1.0);
   const [loading, setLoading] = useState(true);
-  const { setSelectedText } = usePaperStore();
+  const [error, setError] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const { setSelectedText, selectedPaperId } = usePaperStore();
+
+  useEffect(() => {
+    setError(false);
+    setLoading(true);
+  }, [pdfUrl]);
 
   const onDocumentLoadSuccess = ({ numPages }) => {
     setNumPages(numPages);
     setLoading(false);
+    setError(false);
+  };
+
+  const onDocumentLoadError = (error) => {
+    console.error('PDF load error:', error);
+    setLoading(false);
+    setError(true);
+  };
+
+  const handleRetry = async () => {
+    if (!selectedPaperId) return;
+    
+    setRetrying(true);
+    toast.loading('Re-processing paper...', { id: 'retry' });
+    
+    try {
+      await ingestionAPI.ingestPapers([selectedPaperId]);
+      
+      // Wait a bit for processing
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      
+      // Reload the PDF
+      setError(false);
+      setLoading(true);
+      toast.success('Please wait for the PDF to load', { id: 'retry' });
+      
+      // Force reload by adding timestamp to URL
+      window.location.reload();
+    } catch (err) {
+      console.error('Retry error:', err);
+      toast.error('Failed to re-process paper', { id: 'retry' });
+    } finally {
+      setRetrying(false);
+    }
   };
 
   const handleTextSelection = () => {
@@ -94,12 +137,34 @@ const PDFViewer = ({ pdfUrl }) => {
         <Document
           file={pdfUrl}
           onLoadSuccess={onDocumentLoadSuccess}
+          onLoadError={onDocumentLoadError}
           loading=""
           error={
             <div className="text-center space-y-4 p-8">
               <FileText className="h-16 w-16 text-gray-400 mx-auto" />
-              <p className="text-gray-600">Failed to load PDF</p>
-              <p className="text-sm text-gray-500">The paper might not be ingested yet</p>
+              <div className="space-y-2">
+                <p className="text-gray-600 font-medium">Failed to load PDF</p>
+                <p className="text-sm text-gray-500">The paper might still be processing</p>
+                <p className="text-xs text-gray-400">This usually takes 20-30 seconds</p>
+              </div>
+              <Button
+                onClick={handleRetry}
+                disabled={retrying}
+                variant="outline"
+                className="mt-4"
+              >
+                {retrying ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Re-processing...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Retry / Re-process
+                  </>
+                )}
+              </Button>
             </div>
           }
         >

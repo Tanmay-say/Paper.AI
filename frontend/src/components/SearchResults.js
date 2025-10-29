@@ -1,27 +1,76 @@
-import React from 'react';
-import { FileText, User, Calendar, ExternalLink } from 'lucide-react';
+import React, { useState } from 'react';
+import { FileText, User, Calendar, ExternalLink, Loader2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import usePaperStore from '@/store/paperStore';
-import { ingestionAPI } from '@/services/api';
+import { ingestionAPI, paperAPI } from '@/services/api';
 import { toast } from 'sonner';
 
 const PaperCard = ({ paper }) => {
   const { setSelectedPaper } = usePaperStore();
+  const [isIngesting, setIsIngesting] = useState(false);
+
+  const checkPaperExists = async (paperId) => {
+    try {
+      await paperAPI.getPaper(paperId);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  };
+
+  const waitForIngestion = async (paperId, maxAttempts = 20) => {
+    for (let i = 0; i < maxAttempts; i++) {
+      const exists = await checkPaperExists(paperId);
+      if (exists) {
+        return true;
+      }
+      // Wait 2 seconds before checking again
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+    return false;
+  };
 
   const handleSelectPaper = async () => {
-    // Try to ingest the paper first
-    toast.loading('Loading paper...', { id: 'ingest' });
-    try {
-      await ingestionAPI.ingestPapers([paper.paper_id]);
-      toast.success('Paper loaded successfully!', { id: 'ingest' });
+    if (isIngesting) return;
+    
+    setIsIngesting(true);
+    
+    // First check if paper already exists
+    const alreadyExists = await checkPaperExists(paper.paper_id);
+    
+    if (alreadyExists) {
+      toast.success('Paper is ready!');
       setSelectedPaper(paper);
+      setIsIngesting(false);
+      return;
+    }
+
+    // If not, start ingestion
+    toast.loading('Processing paper... This may take 20-30 seconds', { id: 'ingest', duration: Infinity });
+    
+    try {
+      // Trigger ingestion
+      await ingestionAPI.ingestPapers([paper.paper_id]);
+      
+      // Wait for ingestion to complete
+      toast.loading('Downloading and processing PDF...', { id: 'ingest', duration: Infinity });
+      const success = await waitForIngestion(paper.paper_id);
+      
+      if (success) {
+        toast.success('Paper is ready!', { id: 'ingest' });
+        setSelectedPaper(paper);
+      } else {
+        toast.error('Paper processing is taking longer than expected. You can still view it, but PDF might not be available yet.', { id: 'ingest' });
+        setSelectedPaper(paper);
+      }
     } catch (error) {
       console.error('Ingestion error:', error);
-      // Still allow viewing even if ingestion fails
-      toast.dismiss('ingest');
+      toast.error('Failed to process paper. You can still try viewing it.', { id: 'ingest' });
       setSelectedPaper(paper);
+    } finally {
+      setIsIngesting(false);
     }
   };
 
@@ -29,7 +78,7 @@ const PaperCard = ({ paper }) => {
     <Card 
       data-testid={`paper-card-${paper.paper_id}`}
       className="hover:shadow-xl transition-all duration-300 border-gray-200 bg-white/80 backdrop-blur-sm cursor-pointer group"
-      onClick={handleSelectPaper}
+      onClick={!isIngesting ? handleSelectPaper : undefined}
     >
       <CardContent className="p-6">
         <div className="flex items-start justify-between gap-4">
@@ -78,10 +127,20 @@ const PaperCard = ({ paper }) => {
               handleSelectPaper();
             }}
             size="sm"
-            className="flex-shrink-0 bg-blue-500 hover:bg-blue-600"
+            disabled={isIngesting}
+            className="flex-shrink-0 bg-blue-500 hover:bg-blue-600 disabled:opacity-50"
           >
-            <ExternalLink size={16} className="mr-1" />
-            View
+            {isIngesting ? (
+              <>
+                <Loader2 size={16} className="mr-1 animate-spin" />
+                Processing...
+              </>
+            ) : (
+              <>
+                <ExternalLink size={16} className="mr-1" />
+                View
+              </>
+            )}
           </Button>
         </div>
       </CardContent>

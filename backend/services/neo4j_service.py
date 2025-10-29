@@ -24,57 +24,29 @@ class Neo4jService:
     async def verify_connectivity(self):
         """Verify connection to Neo4j"""
         try:
-            # Prefer driver's built-in connectivity check (TLS/auth/route validation)
+            # Use driver's built-in connectivity check
             await self.driver.verify_connectivity()
             async with self.driver.session(database=settings.NEO4J_DATABASE) as session:
                 result = await session.run("RETURN 1 as num")
                 record = await result.single()
-                logger.info("Neo4j connectivity verified successfully")
+                logger.info(f"✅ Neo4j connectivity verified successfully")
                 return record["num"] == 1
         except Exception as e:
-            parsed = urlparse(settings.NEO4J_URI)
-            safe_host = f"{parsed.scheme}://{parsed.hostname}:{parsed.port}" if parsed.hostname else settings.NEO4J_URI
-            logger.error(
-                f"Failed to verify Neo4j connectivity to {safe_host} (db={settings.NEO4J_DATABASE}, user={settings.NEO4J_USER}): {e}"
-            )
-
-            # Fallback: if using neo4j+s (routing) and it fails, retry with bolt+s (direct)
-            try:
-                if parsed.scheme.startswith("neo4j"):
-                    fallback_uri = settings.NEO4J_URI.replace("neo4j+s", "bolt+s").replace("neo4j://", "bolt://")
-                    self._init_driver(fallback_uri)
-                    await self.driver.verify_connectivity()
-                    async with self.driver.session(database=settings.NEO4J_DATABASE) as session:
-                        result = await session.run("RETURN 1 as num")
-                        record = await result.single()
-                        logger.info("Neo4j connectivity verified successfully via fallback bolt+s")
-                        return record["num"] == 1
-            except Exception as e2:
-                logger.error(f"Fallback connection attempt failed: {e2}")
-                return False
-
+            logger.error(f"❌ Failed to verify Neo4j connectivity: {e}")
+            logger.info("Tip: Ensure Neo4j Aura database is active and credentials are correct")
             return False
 
     def _init_driver(self, uri: str) -> None:
         parsed = urlparse(uri)
 
-        def ipv4_only_resolver(address):
-            host, port = address
-            try:
-                infos = socket.getaddrinfo(host, port or 7687, family=socket.AF_INET, type=socket.SOCK_STREAM)
-                # Return list of (host, port) tuples
-                return [(ai[4][0], ai[4][1]) for ai in infos]
-            except Exception:
-                # Fall back to original address if resolution fails
-                return [(host, port or 7687)]
-
+        # For Neo4j Aura (neo4j+s), encryption is already built-in
+        # No need to specify encrypted or trust parameters
         self.driver = AsyncGraphDatabase.driver(
             uri,
             auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD),
-            max_connection_lifetime=3600,
-            resolver=ipv4_only_resolver,
+            max_connection_lifetime=3600
         )
-        safe_host = f"{parsed.scheme}://{parsed.hostname}:{parsed.port}" if parsed.hostname else uri
+        safe_host = f"{parsed.scheme}://{parsed.hostname}" if parsed.hostname else uri
         logger.info(f"Neo4j driver initialized for {safe_host} (db={settings.NEO4J_DATABASE})")
     
     async def setup_schema(self):

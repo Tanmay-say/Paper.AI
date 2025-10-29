@@ -97,72 +97,82 @@ def ingest_single_paper(paper_id: str, source: str = 'arxiv', job_id: str = None
     try:
         logger.info(f"Ingesting paper: {paper_id}")
         
-        # Run async functions in event loop
+        # Create a new event loop for this task
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
-        # Step 1: Get paper metadata
-        paper_metadata = loop.run_until_complete(
-            discovery_agent.get_paper_by_id(paper_id)
-        )
+        try:
+            # Step 1: Get paper metadata
+            paper_metadata = loop.run_until_complete(
+                discovery_agent.get_paper_by_id(paper_id)
+            )
+            
+            # Step 2: Download PDF
+            pdf_path = download_paper_pdf(paper_id, paper_metadata.arxiv_id)
+            
+            # Step 3: Extract text
+            text = extract_text_from_pdf(pdf_path)
+            if not text:
+                raise Exception("Failed to extract text from PDF")
+            
+            # Step 4: Chunk text
+            chunks = chunk_text(text, settings.CHUNK_SIZE, settings.CHUNK_OVERLAP)
+            logger.info(f"Created {len(chunks)} chunks for paper {paper_id}")
+            
+            # Step 5: Generate embeddings
+            embeddings = loop.run_until_complete(
+                embedding_service.generate_embeddings_batch(chunks)
+            )
+            
+            # Step 6: Prepare data for Neo4j
+            paper_data = {
+                'paper': {
+                    'paper_id': paper_metadata.paper_id,
+                    'title': paper_metadata.title,
+                    'abstract': paper_metadata.abstract,
+                    'year': paper_metadata.year,
+                    'source': paper_metadata.source,
+                    'arxiv_id': paper_metadata.arxiv_id,
+                    'pdf_path': pdf_path,
+                    'published_date': paper_metadata.published_date
+                },
+                'authors': [
+                    {'author_id': f"author_{i}", 'name': name}
+                    for i, name in enumerate(paper_metadata.authors)
+                ],
+                'chunks': [
+                    {
+                        'chunk_id': f"{paper_id}_chunk_{i}",
+                        'text': chunk,
+                        'paper_id': paper_id,
+                        'chunk_index': i,
+                        'embedding': embedding
+                    }
+                    for i, (chunk, embedding) in enumerate(zip(chunks, embeddings))
+                ]
+            }
+            
+            # Step 7: Store in Neo4j with a new service instance
+            # Create a fresh Neo4j service for this task to avoid event loop conflicts
+            from services.neo4j_service import Neo4jService
+            neo4j_task_service = Neo4jService()
+            
+            success = loop.run_until_complete(
+                neo4j_task_service.store_paper(paper_data)
+            )
+            
+            # Close the task-specific Neo4j service
+            loop.run_until_complete(neo4j_task_service.close())
+            
+            if success:
+                logger.info(f"Successfully ingested paper: {paper_id}")
+                return {'status': 'success', 'paper_id': paper_id, 'job_id': job_id}
+            else:
+                raise Exception("Failed to store paper in Neo4j")
         
-        # Step 2: Download PDF
-        pdf_path = download_paper_pdf(paper_id, paper_metadata.arxiv_id)
-        
-        # Step 3: Extract text
-        text = extract_text_from_pdf(pdf_path)
-        if not text:
-            raise Exception("Failed to extract text from PDF")
-        
-        # Step 4: Chunk text
-        chunks = chunk_text(text, settings.CHUNK_SIZE, settings.CHUNK_OVERLAP)
-        logger.info(f"Created {len(chunks)} chunks for paper {paper_id}")
-        
-        # Step 5: Generate embeddings
-        embeddings = loop.run_until_complete(
-            embedding_service.generate_embeddings_batch(chunks)
-        )
-        
-        # Step 6: Prepare data for Neo4j
-        paper_data = {
-            'paper': {
-                'paper_id': paper_metadata.paper_id,
-                'title': paper_metadata.title,
-                'abstract': paper_metadata.abstract,
-                'year': paper_metadata.year,
-                'source': paper_metadata.source,
-                'arxiv_id': paper_metadata.arxiv_id,
-                'pdf_path': pdf_path,
-                'published_date': paper_metadata.published_date
-            },
-            'authors': [
-                {'author_id': f"author_{i}", 'name': name}
-                for i, name in enumerate(paper_metadata.authors)
-            ],
-            'chunks': [
-                {
-                    'chunk_id': f"{paper_id}_chunk_{i}",
-                    'text': chunk,
-                    'paper_id': paper_id,
-                    'chunk_index': i,
-                    'embedding': embedding
-                }
-                for i, (chunk, embedding) in enumerate(zip(chunks, embeddings))
-            ]
-        }
-        
-        # Step 7: Store in Neo4j
-        success = loop.run_until_complete(
-            neo4j_service.store_paper(paper_data)
-        )
-        
-        loop.close()
-        
-        if success:
-            logger.info(f"Successfully ingested paper: {paper_id}")
-            return {'status': 'success', 'paper_id': paper_id, 'job_id': job_id}
-        else:
-            raise Exception("Failed to store paper in Neo4j")
+        finally:
+            # Clean up the event loop
+            loop.close()
     
     except Exception as e:
         logger.error(f"Error ingesting paper {paper_id}: {e}")

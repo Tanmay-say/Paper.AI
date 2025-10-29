@@ -8,7 +8,7 @@ celery_app = Celery(
     'paperai_worker',
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=['backend.workers.ingestion_tasks']  # Include task modules
+    include=['workers.ingestion_tasks']  # Include task modules
 )
 
 celery_app.conf.update(
