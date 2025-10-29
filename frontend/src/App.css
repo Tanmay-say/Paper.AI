@@ -50,7 +50,10 @@ body {
 }
 
 .react-pdf__Page__textContent {
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  /* Improve text selection experience */
+  user-select: text;
+  -webkit-user-select: text;
+  -ms-user-select: text;
 }
 
 .react-pdf__Page__annotations {

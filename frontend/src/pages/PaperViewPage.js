@@ -54,14 +54,14 @@ const PaperViewPage = () => {
 
       {/* Main Content: PDF + Chat */}
       <div className="flex-1 overflow-hidden">
-        <div className="h-full grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
+        <div className="h-full grid grid-cols-1 lg:grid-cols-2 gap-6 p-6 min-h-0">
           {/* PDF Viewer */}
-          <div className="h-full">
+          <div className="h-full min-h-0">
             <PDFViewer pdfUrl={pdfUrl} />
           </div>
 
           {/* Chat Interface */}
-          <div className="h-full">
+          <div className="h-full min-h-0">
             <ChatInterface />
           </div>
         </div>
