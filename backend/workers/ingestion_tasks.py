@@ -59,15 +59,25 @@ def download_paper_pdf(paper_id: str, arxiv_id: str) -> str:
         search = arxiv.Search(id_list=[arxiv_id])
         paper = next(client.results(search))
         
-        # Create directory if it doesn't exist
         storage_path = Path(settings.PDF_STORAGE_PATH)
         storage_path.mkdir(parents=True, exist_ok=True)
-        
-        # Download PDF
         pdf_path = storage_path / f"{paper_id}.pdf"
-        paper.download_pdf(filename=str(pdf_path))
         
-        logger.info(f"Downloaded PDF for paper {paper_id}")
+        # Primary: use arxiv library helper
+        paper.download_pdf(filename=str(pdf_path))
+        if pdf_path.exists() and pdf_path.stat().st_size > 0:
+            logger.info(f"Downloaded PDF for paper {paper_id} via arxiv client")
+            return str(pdf_path)
+        
+        # Fallback: direct HTTP to canonical PDF URL (covers some old IDs)
+        import urllib.request
+        pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+        logger.warning(f"Arxiv client download returned empty file. Falling back to direct URL: {pdf_url}")
+        with urllib.request.urlopen(pdf_url) as response, open(pdf_path, 'wb') as out_file:
+            out_file.write(response.read())
+        if not pdf_path.exists() or pdf_path.stat().st_size == 0:
+            raise Exception("Downloaded PDF is empty")
+        logger.info(f"Downloaded PDF for paper {paper_id} via direct URL")
         return str(pdf_path)
     
     except Exception as e:

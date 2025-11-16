@@ -19,6 +19,7 @@ from agents.hybrid_retriever import hybrid_retriever
 from agents.answer_generator import answer_generator
 from services.neo4j_service import neo4j_service
 from workers.ingestion_tasks import ingest_paper_batch
+from workers.ingestion_tasks import ingest_single_paper
 
 # Configure logging
 logging.basicConfig(
@@ -282,6 +283,39 @@ async def chat_websocket(websocket: WebSocket):
             'type': 'error',
             'data': str(e)
         })
+
+
+# Dashboard Endpoint
+@api_router.get("/dashboard")
+async def get_dashboard_overview():
+    """Return aggregated metrics for the dashboard UI."""
+    try:
+        overview = await neo4j_service.get_dashboard_overview()
+        return overview
+    except Exception as e:
+        logger.error(f"Error fetching dashboard overview: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Admin Ingestion (sync or async)
+@api_router.post("/admin/ingest/{paper_id}")
+async def admin_ingest_paper(paper_id: str, mode: str = "async"):
+    """Trigger ingestion for a single paper.
+
+    - mode=async: enqueue to Celery (default)
+    - mode=sync: run immediately in this process (useful for debugging)
+    """
+    try:
+        if mode == "sync":
+            # Run the task function directly (synchronous execution)
+            result = ingest_single_paper(paper_id)
+            return {"mode": "sync", **(result or {})}
+        else:
+            task = ingest_single_paper.delay(paper_id)
+            return {"mode": "async", "job_id": task.id, "status": "queued"}
+    except Exception as e:
+        logger.error(f"Error triggering ingestion for {paper_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # Ingestion Endpoints

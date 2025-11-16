@@ -243,5 +243,66 @@ class Neo4jService:
                 logger.error(f"Error during graph expansion for paper {paper_id}: {e}")
                 return []
 
+    async def get_dashboard_overview(self) -> Dict[str, Any]:
+        """Return aggregate metrics for the dashboard.
+
+        Includes:
+        - total_papers
+        - total_authors
+        - total_chunks
+        - papers_per_year: [{year, count}]
+        - top_authors: [{author, count}]
+        """
+        async with self.driver.session(database=settings.NEO4J_DATABASE) as session:
+            try:
+                # Run counts in parallel transactions
+                total_papers_result = await session.run("MATCH (p:Paper) RETURN count(p) AS total")
+                total_authors_result = await session.run("MATCH (a:Author) RETURN count(a) AS total")
+                total_chunks_result = await session.run("MATCH (c:Chunk) RETURN count(c) AS total")
+
+                tp_record = await total_papers_result.single()
+                ta_record = await total_authors_result.single()
+                tc_record = await total_chunks_result.single()
+
+                # Papers per year
+                ppy_query = (
+                    "MATCH (p:Paper) WHERE exists(p.year) "
+                    "RETURN p.year AS year, count(p) AS count ORDER BY year"
+                )
+                ppy_result = await session.run(ppy_query)
+                ppy_records = await ppy_result.values()
+                papers_per_year = [
+                    { 'year': record[0], 'count': record[1] } for record in ppy_records
+                ]
+
+                # Top authors by paper count
+                ta_query = (
+                    "MATCH (a:Author)<-[:AUTHORED_BY]-(:Paper) "
+                    "RETURN a.name AS author, count(*) AS count "
+                    "ORDER BY count DESC LIMIT 10"
+                )
+                ta_result = await session.run(ta_query)
+                ta_records = await ta_result.values()
+                top_authors = [
+                    { 'author': record[0], 'count': record[1] } for record in ta_records
+                ]
+
+                return {
+                    'total_papers': tp_record[0] if tp_record else 0,
+                    'total_authors': ta_record[0] if ta_record else 0,
+                    'total_chunks': tc_record[0] if tc_record else 0,
+                    'papers_per_year': papers_per_year,
+                    'top_authors': top_authors
+                }
+            except Exception as e:
+                logger.error(f"Error building dashboard overview: {e}")
+                return {
+                    'total_papers': 0,
+                    'total_authors': 0,
+                    'total_chunks': 0,
+                    'papers_per_year': [],
+                    'top_authors': []
+                }
+
 
 neo4j_service = Neo4jService()
